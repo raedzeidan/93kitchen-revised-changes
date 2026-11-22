@@ -1,0 +1,15 @@
+{
+  "title": "93 Kitchen | مطبخ 93",
+  "description": "وجبات بيتية طازجة في عمّان. اختار طبق اليوم أو رتّب اشتراكك الأسبوعي.",
+  "language": "ar",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": true
+  },
+  "icons": {
+    "icon": "/assets/logo.svg"
+  }
+}
