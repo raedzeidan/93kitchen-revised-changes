@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { resolve, extname, sep } from "node:path";
 import { randomBytes } from "node:crypto";
 import QRCode from "qrcode";
-import { providers, begin, complete } from "./social.mjs";
+import { providers, begin, complete, managedAuthURL, managedGoogle } from "./social.mjs";
 import { one, rows } from "./db.mjs";
 import { hash, matches, session, issue, publicUser } from "./storage.mjs";
 import { mealById, planById, eligible, statuses } from "./public/catalog.js";
@@ -20,8 +20,9 @@ const types = {
   ".png": "image/png",
   ".txt": "text/plain",
 };
-const fees = JSON.parse(process.env.DELIVERY_ZONES || '{"العبدلي":0}');
-if (!Object.keys(fees).length || Object.values(fees).some((v) => !Number.isSafeInteger(v) || v < 0))
+import { defaultFees } from "./public/delivery.js";
+const fees = { ...defaultFees, ...JSON.parse(process.env.DELIVERY_ZONES || "{}") };
+if (!Object.keys(fees).length || Object.values(fees).some((v) => v !== null && (!Number.isSafeInteger(v) || v < 0)))
   throw Error("Invalid DELIVERY_ZONES");
 const cliq = {
   alias: process.env.CLIQ_ALIAS || "",
@@ -134,7 +135,7 @@ function orderPayload(b) {
     });
     subtotal = p.items.reduce((a, i) => a + i.qty * i.price, 0);
   } else fail("نوع الطلب غير صالح.");
-  return { payload: p, total: subtotal + p.delivery };
+  return { payload: p, total: subtotal + (p.delivery ?? 0) };
 }
 function row(r) {
   return {
@@ -178,7 +179,7 @@ export async function api(req, res, path) {
     res.writeHead(302, { Location: target, "Cache-Control": "no-store" });
     return res.end();
   }
-  if (path === "/api/session" && get) return send(res, { user: u, fees, cliq, contact, providers });
+  if (path === "/api/session" && get) return send(res, { user: u, fees, cliq, contact, providers, managedAuthURL });
   if (path === "/api/orders" && get)
     return send(
       res,
@@ -216,6 +217,14 @@ export async function api(req, res, path) {
   if (req.headers.origin && new URL(req.headers.origin).host !== req.headers.host)
     fail("مصدر الطلب غير صالح.", 403);
   const b = await body(req);
+  if (path === "/api/google-session") {
+    rate(req);
+    let id;
+    try { id = await managedGoogle(b.token); }
+    catch { fail("تعذّر ربط حساب Google. إذا كنت مسجّلاً بهذا البريد، استخدم طريقة دخولك الأصلية.", 401); }
+    await rotate(s, res, id);
+    return send(res, await publicUser(id));
+  }
   if (path === "/api/signup" || path === "/api/login") {
     rate(req, b.email);
     const email = string(b.email, 254).toLowerCase(),
@@ -265,7 +274,7 @@ export async function api(req, res, path) {
       s.user_id,
       idem,
       b.kind,
-      "pending",
+      payload.delivery === null ? "delivery_review" : "pending",
       total,
       JSON.stringify(payload),
       new Date().toISOString(),
@@ -293,6 +302,18 @@ export async function api(req, res, path) {
   }
   if (path === "/api/staff/payment") {
     if (!u?.finance) fail("تحتاج صلاحية المالية.", 403);
+    if (b.status === "pending") {
+      if (!Number.isSafeInteger(b.delivery) || b.delivery < 0 || b.delivery > 100000)
+        fail("أدخل رسوم التوصيل الصحيحة.");
+      const quoted = await one(
+        `UPDATE orders SET total=total+$1, status='pending',
+         payload=jsonb_set(payload::jsonb,'{delivery}',to_jsonb($1::integer))::text
+         WHERE ref=$2 AND status='delivery_review' RETURNING ref`,
+        b.delivery, string(b.ref)
+      );
+      if (!quoted) fail("الحالة تغيّرت. راجع الطلب.", 409);
+      return send(res, { ok: true });
+    }
     const r = await one("SELECT status FROM orders WHERE ref=$1", string(b.ref));
     const next = { pending: "paid", paid: "preparing", preparing: "completed" };
     if (!r || !Object.hasOwn(statuses, b.status) || next[r.status] !== b.status)

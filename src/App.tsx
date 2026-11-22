@@ -10,6 +10,7 @@ import {
   Drawer,
   Homepage,
   MealCard,
+  PlanCards,
   Title,
   Empty,
   Social,
@@ -17,6 +18,7 @@ import {
 import { Planner, Identity, Details, Review } from "./Checkout.jsx";
 import { Login, Account, Orders, Receipt, Staff } from "./Account.jsx";
 
+import { defaultFees } from "../public/delivery.js";
 const blankContact = { name: "", phone: "", area: "", address: "", email: "" };
 const initialDraft = () => ({
   kind: "meal",
@@ -46,7 +48,7 @@ function useStored(key: string, storage: Storage, fallback: () => any) {
   return [value, setValue];
 }
 const defaultConfig = {
-  fees: { العبدلي: 0 },
+  fees: defaultFees,
   cliq: {},
   contact: { instagram: "https://www.instagram.com/93kitchen.jo/" },
 };
@@ -76,6 +78,20 @@ const policy: Record<string, [string, string[]]> = {
     ],
   ],
 };
+let startup: Promise<any> | undefined;
+function loadSession() {
+  return startup ??= api("session").then(async config => {
+    if (!new URLSearchParams(location.search).has("kitchen_social")) return config;
+    try {
+      const token = await (await import("./google.js")).finishGoogle(config.managedAuthURL);
+      config.user = await api("google-session", { token });
+      history.replaceState(null, "", "/#/signed-in");
+    } catch {
+      history.replaceState(null, "", "/#/login/unavailable");
+    }
+    return config;
+  }).catch(error => { startup = undefined; throw error; });
+}
 export default function App() {
   const [path, setPath] = useState(location.hash.slice(1) || "/"),
     [drawer, setDrawer] = useState(false),
@@ -94,9 +110,10 @@ export default function App() {
   const [view, arg] = path.split("/").filter(Boolean);
   useEffect(() => {
     let live = true;
-    api("session")
+    loadSession()
       .then((v) => {
         if (live) {
+          setPath(location.hash.slice(1) || "/");
           setConfig(v);
           setUser(v.user);
         }
@@ -363,7 +380,7 @@ export default function App() {
         />
       ) : (
         <div className="container page">
-          <Empty title="اختار باقتك أولاً" link="/home/plans" label="عرض الباقات" />
+          <PlanCards choose={choose} />
         </div>
       );
   else if (["identity", "details", "review"].includes(view) && !validCheckout)
@@ -406,6 +423,7 @@ export default function App() {
         signup={view === "signup"}
         after={afterLogin}
         providers={config.providers || []}
+        managedAuthURL={config.managedAuthURL}
         unavailable={arg === "unavailable"}
         staff={view === "staff"}
       />
@@ -419,6 +437,7 @@ export default function App() {
         logout={async () => {
           try {
             await api("logout");
+            if (config.managedAuthURL) (await import("./google.js")).closeGoogle(config.managedAuthURL).catch(() => {});
             setUser(null);
             setOrders(null);
             setDraft(initialDraft());

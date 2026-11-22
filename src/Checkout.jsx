@@ -1,3 +1,4 @@
+import { DeliveryFields } from "./DeliveryFields.jsx";
 import React, { useState } from "react";
 import { weekdays, meals, planById, mealById, eligible, money } from "../public/catalog.js";
 import { go, icon, Modal, Title, dishPhoto, AreaPicker } from "./ui.jsx";
@@ -250,10 +251,10 @@ export function Totals({ draft, cart, fees }) {
         <dt>{isPlan ? "قيمة الباقة" : "قيمة الوجبات"}</dt>
         <dd>{money(sum)}</dd>
         <dt>رسوم التوصيل</dt>
-        <dd>{fee === undefined ? "بعد اختيار المنطقة" : money(fee)}</dd>
+        <dd>{fee === null ? "يحدّدها المطعم قبل الدفع" : fee === undefined ? "بعد اختيار المنطقة" : money(fee)}</dd>
       </dl>
       <div className="total">
-        <span>الإجمالي</span>
+        <span>{fee == null ? "المجموع قبل التوصيل" : "الإجمالي"}</span>
         <strong>{money(sum + (fee || 0))}</strong>
       </div>
     </aside>
@@ -309,15 +310,7 @@ export function ContactFields({ initial, fees, submit, button = "متابعة", 
           {...props("phone")}
         />
       </label>
-      <label>
-        منطقة التوصيل *
-        <select required {...props("area")}>
-          <option value="">حدد منطقتك</option>
-          {Object.keys(fees).map((a) => (
-            <option key={a}>{a}</option>
-          ))}
-        </select>
-      </label>
+      <DeliveryFields fees={fees} value={f.area || ""} onChange={area => set({ ...f, area })} />
       <label>
         عنوان التوصيل *
         <input
@@ -443,7 +436,7 @@ export function Review({ draft, setDraft, cart, fees, send, busy, error }) {
               </p>
             )}
             <button disabled={!draft.terms || busy} className="btn primary full" onClick={send}>
-              {busy ? "جارٍ الإرسال…" : sub ? "تأكيد الاشتراك" : "تأكيد الطلب"}
+              {busy ? "جارٍ الإرسال…" : fees[draft.contact.area] === null ? "إرسال طلب تأكيد التوصيل" : sub ? "تأكيد الاشتراك" : "تأكيد الطلب"}
             </button>
             <small>يبدأ التحضير بعد تأكيد استلام الدفع.</small>
           </div>

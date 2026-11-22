@@ -129,4 +129,14 @@ test("guest orders, subscriptions, account ownership and payment reconciliation"
   assert.equal((await staff("staff/orders")).data.length, 3);
   assert.equal((await staff("staff/payment", { ref: sub.data.ref, status: "paid" })).status, 200);
   assert.equal((await buyer("orders")).data.find((o) => o.ref === sub.data.ref).status, "paid");
+  const review = await buyer("orders", { ...one, requestId: randomUUID(), contact: { ...contact, area: "إربد" } });
+  assert.equal(review.status, 201);
+  assert.equal(review.data.status, "delivery_review");
+  assert.equal(review.data.delivery, null);
+  const quote = { ref: review.data.ref, status: "pending", delivery: 220 };
+  assert.equal((await staff("staff/payment", { ...quote, status: "paid" })).status, 409);
+  assert.equal((await staff("staff/payment", quote)).status, 200);
+  assert.equal((await staff("staff/payment", quote)).status, 409);
+  assert.equal((await buyer("orders")).data.find(o => o.ref === quote.ref).total, 1120);
+  assert.equal((await buyer("google-session", { token: "invalid" })).status, 401);
 });

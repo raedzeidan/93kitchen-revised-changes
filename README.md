@@ -22,6 +22,8 @@ pnpm build
 pnpm start
 ```
 
+On the published 93kitchenn1.figma.site domain, the updated entrypoint forwards the current route to the full-stack Neon storefront. Publish this source in the corresponding Figma Make project to activate the forwarding.
+
 The production server listens on port 3000 by default. The server connects to Neon PostgreSQL with the server-only `DATABASE_URL`. Apply `pnpm db:migrate` when provisioning a new database. Serve this Node process behind HTTPS for customer use. Static hosting of `dist/` alone serves the storefront and requires a separate same-origin `/api/` route for ordering and accounts.
 
 ## Customer flows
@@ -34,7 +36,7 @@ The production server listens on port 3000 by default. The server connects to Ne
 
 ## Restaurant configuration
 
-The server reads variables from its environment or a local `.env` file. Amounts in `DELIVERY_ZONES` are hundredths of a dinar. The initial entry is Abdali with zero delivery charge, matching the example checkout in the design. Set the restaurant’s verified coverage and fees before opening orders.
+The server reads variables from its environment or a local `.env` file. Amounts in `DELIVERY_ZONES` are hundredths of a dinar. The address picker lists all 12 Jordanian governorates and accepts a detailed address for other localities. Abdali retains its existing zero charge. Unpriced destinations submit a delivery review request and do not show payment instructions until staff confirm coverage and enter the fee. DELIVERY_ZONES overrides fees by locality.
 
 | Variable | Meaning |
 | --- | --- |
@@ -67,3 +69,5 @@ The integration test runs against a temporary local PostgreSQL-compatible PGlite
 The project uses the database `kitchen93` on its `production` branch. Supply a private Neon connection string to a Node deployment. Keep it outside the repository and client-side Vite variables. With Neon Functions, the runtime supplies the connection. Set `COOKIE_SECURE=1` on HTTPS.
 
 The optional same-origin Neon Function serves the React build and order API. On Node 24 with the zip utility available, run `pnpm build` followed by `node scripts/package-function.mjs /tmp/kitchen-function.zip`. Deploy the resulting ZIP as the `kitchen` function. The package includes only bundled server code and built public assets.
+
+Google sign-in uses the managed Neon Auth Google provider and a trusted storefront origin. The Function uses NEON_AUTH_BASE_URL and NEON_AUTH_JWKS_URL, checks the signed identity against the Neon Auth Google account, and issues a first-party kitchen session. Existing password accounts retain their original login.

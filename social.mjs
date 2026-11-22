@@ -1,3 +1,4 @@
+import { createRemoteJWKSet, jwtVerify } from "jose";
 import * as oidc from "openid-client";
 import { one, rows } from "./db.mjs";
 import { hash } from "./storage.mjs";
@@ -12,17 +13,40 @@ const connections = {
   Google: process.env.OIDC_GOOGLE_CONNECTION,
   Facebook: process.env.OIDC_FACEBOOK_CONNECTION,
 };
-export const providers =
+const brokerProviders =
   issuer && clientId && secret && redirect
     ? Object.keys(connections).filter((p) => connections[p])
     : [];
+export const managedAuthURL = process.env.NEON_AUTH_BASE_URL || "";
+export const providers = [...new Set([...brokerProviders, ...(managedAuthURL ? ["Google"] : [])])];
+const keys = managedAuthURL
+  ? createRemoteJWKSet(new URL(process.env.NEON_AUTH_JWKS_URL || managedAuthURL + "/.well-known/jwks.json"))
+  : null;
+
+export async function managedGoogle(token) {
+  if (!keys || typeof token !== "string") throw Error("Missing token");
+  const { payload } = await jwtVerify(token, keys, {
+    issuer: [new URL(managedAuthURL).origin, managedAuthURL],
+    requiredClaims: ["sub", "exp", "iat"],
+    algorithms: ["EdDSA"],
+  });
+  const user = await one(
+    `SELECT u.email,u.name FROM neon_auth."user" u
+     WHERE u.id::text=$1 AND u."emailVerified" AND NOT coalesce(u.banned,false)
+     AND EXISTS (SELECT 1 FROM neon_auth.account a WHERE a."userId"=u.id AND a."providerId"='google')`,
+    payload.sub
+  );
+  if (!user) throw Error("Google identity required");
+  return appIdentity({ iss: managedAuthURL, sub: payload.sub, email: user.email, name: user.name, email_verified: true });
+}
+
 let configuration;
 async function config() {
   if (!configuration) configuration = await oidc.discovery(new URL(issuer), clientId, secret);
   return configuration;
 }
 export async function begin(provider, s) {
-  if (!providers.includes(provider)) throw Error("Provider unavailable");
+  if (!brokerProviders.includes(provider)) throw Error("Provider unavailable");
   const c = await config(),
     state = oidc.randomState(),
     nonce = oidc.randomNonce(),
@@ -47,7 +71,7 @@ export async function begin(provider, s) {
   }).href;
 }
 export async function complete(query, s) {
-  if (!providers.length) throw Error("Provider unavailable");
+  if (!brokerProviders.length) throw Error("Provider unavailable");
   const current = new URL(redirect);
   current.search = query;
   const state = current.searchParams.get("state") || "";
@@ -65,6 +89,9 @@ export async function complete(query, s) {
     idTokenExpected: true,
   });
   const claims = tokens.claims();
+  return appIdentity(claims);
+}
+async function appIdentity(claims) {
   if (!claims?.sub) throw Error("Missing identity");
   const identity = await one(
     "SELECT user_id FROM identities WHERE issuer=$1 AND subject=$2",

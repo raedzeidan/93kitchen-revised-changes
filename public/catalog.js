@@ -40,6 +40,7 @@ export const eligible = (plan, meal) =>
   Boolean(meal && (plan.id !== "chicken" || meal.category === "دجاج"));
 export const money = (cents) => (cents / 100).toFixed(2) + " د.أ";
 export const statuses = {
+  delivery_review: "بانتظار تأكيد التوصيل",
   pending: "بانتظار تأكيد الدفع",
   paid: "تم تأكيد الدفع",
   preparing: "قيد التحضير",

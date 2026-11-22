@@ -1,3 +1,4 @@
+import { DeliveryFields } from "./DeliveryFields.jsx";
 import React, { useEffect, useId, useRef } from "react";
 import { money, plans, faqs, mealById } from "../public/catalog.js";
 
@@ -257,43 +258,17 @@ export function PlanCards({ choose }) {
 }
 export function AreaPicker({ fees, initial = "", onConfirm }) {
   const [area, set] = React.useState(initial || "");
-  const [checked, mark] = React.useState(false);
   return (
-    <form
-      className="area-form"
-      onSubmit={(e) => {
-        e.preventDefault();
-        mark(true);
-        if (Object.hasOwn(fees, area)) onConfirm(area);
-      }}
-    >
-      <label>
-        منطقة التوصيل
-        <select
-          required
-          value={area}
-          onChange={(e) => {
-            set(e.target.value);
-            mark(false);
-          }}
-        >
-          <option value="">حدد منطقتك</option>
-          {Object.keys(fees).map((a) => (
-            <option key={a}>{a}</option>
-          ))}
-          <option value="other">منطقة أخرى</option>
-        </select>
-      </label>
-      <button className="btn primary">تحقّق من التوصيل</button>
-      {checked && area === "other" && (
-        <p role="alert" className="error">
-          التوصيل غير متاح لهذه المنطقة حالياً. اختار منطقة أخرى أو{" "}
-          <a href="#/contact">تواصل معنا</a>.
-        </p>
-      )}
+    <form className="area-form" onSubmit={e => {
+      e.preventDefault();
+      if (Object.hasOwn(fees, area)) onConfirm(area);
+    }}>
+      <DeliveryFields fees={fees} value={area} onChange={set} />
+      <button className="btn primary">اختيار المنطقة</button>
     </form>
   );
 }
+
 const reviews = [
   ["سارة", "الأكل طيب وبحسّه قريب من طبخ البيت. فكرة ترتيب الوجبات بتسهّل يومي."],
   ["أحمد", "عجبني تنوّع الوجبات ووضوح الأسعار. الطلب للدوام صار أسهل."],
@@ -343,7 +318,7 @@ export function Homepage({ onAdd, onBuy, choose, fees, area, selectArea }) {
         />
         {verified && (
           <p role="status">
-            منطقتك مشمولة ✓ · {area} · {fees[area] ? money(fees[area]) : "توصيل مجاني"}
+            {area} · {fees[area] === null ? "التغطية والرسوم بانتظار تأكيد المطعم" : fees[area] ? money(fees[area]) : "توصيل مجاني"}
           </p>
         )}
       </section>

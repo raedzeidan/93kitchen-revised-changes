@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Title, Empty, Modal, go, api, asset, Social } from "./ui.jsx";
 import { money, statuses, planById, mealById } from "../public/catalog.js";
 import { ContactFields } from "./Checkout.jsx";
-export function Login({ signup, after, staff = false, providers = [], unavailable = false }) {
+export function Login({ signup, after, staff = false, providers = [], managedAuthURL, unavailable = false }) {
   const [error, setError] = useState(
       unavailable
         ? "تعذّر إكمال دخول الحساب الاجتماعي. استخدم بريدك الإلكتروني أو طريقة الدخول الأصلية."
@@ -34,13 +34,18 @@ export function Login({ signup, after, staff = false, providers = [], unavailabl
           {!staff && (
             <>
               <div className="providers">
-                {["Apple", "Google", "Facebook"].map((n) => (
+                {providers.map((n) => (
                   <button
                     key={n}
                     type="button"
-                    disabled={!providers.includes(n)}
-                    onClick={() => location.assign("/api/auth/" + n)}
-                    title={providers.includes(n) ? "متابعة مع " + n : "غير مفعّل حالياً"}
+                    disabled={busy}
+                    onClick={async () => {
+                      if (n !== "Google" || !managedAuthURL) return location.assign("/api/auth/" + n);
+                      setBusy(true);
+                      try { await (await import("./google.js")).startGoogle(managedAuthURL); }
+                      catch (e) { setError(e.message); setBusy(false); }
+                    }}
+                    title={"متابعة مع " + n}
                   >
                     <img src={asset("provider-" + n.toLowerCase() + ".svg")} alt="" />
                     {n}
@@ -164,7 +169,7 @@ export function Orders({ orders, error }) {
               <div>
                 <h3>{orderTitle(o)}</h3>
                 <p>
-                  <bdi>{o.ref}</bdi> · {money(o.total)} · {o.contact.area}
+                  <bdi>{o.ref}</bdi> · {money(o.total)} {o.status === "delivery_review" && "قبل التوصيل"} · {o.contact.area}
                 </p>
               </div>
               <span className="pill">{statuses[o.status]}</span>
@@ -180,7 +185,8 @@ export function Orders({ orders, error }) {
 }
 export function Receipt({ order: o, cliq, contact, edit }) {
   if (!o) return <Empty title="تعذّر العثور على الطلب" link="/orders" label="طلباتي" />;
-  const paid = o.status !== "pending";
+  const awaitingDelivery = o.status === "delivery_review";
+  const paid = !awaitingDelivery && o.status !== "pending";
   return (
     <div className="container page">
       <Title sub={"رقم المرجع · " + o.ref}>
@@ -193,7 +199,7 @@ export function Receipt({ order: o, cliq, contact, edit }) {
       <div className="split">
         <section className="panel">
           <span className="pill">{statuses[o.status]}</span>
-          {paid ? (
+          {awaitingDelivery ? <p>استلمنا طلبك. سيحدّد المطعم رسوم التوصيل قبل الدفع. تابع المبلغ من هذه الصفحة.</p> : paid ? (
             <>
               <img className="confirm-icon" src={asset("confirmed.svg")} alt="" />
               <h2>{o.kind === "subscription" ? "اشتراكك مفعّل" : "طلبك قيد المتابعة"}</h2>
@@ -262,7 +268,7 @@ export function Receipt({ order: o, cliq, contact, edit }) {
             <dd>{o.contact.address}</dd>
             <dt>طريقة الدفع</dt>
             <dd>{o.payment === "cliq" ? "CliQ" : "داخل المطعم"}</dd>
-            <dt>الإجمالي</dt>
+            <dt>{awaitingDelivery ? "المجموع قبل التوصيل" : "الإجمالي"}</dt>
             <dd>{money(o.total)}</dd>
           </dl>
           <a className="btn primary full" href="#/orders">
@@ -410,9 +416,19 @@ export function Staff({ user }) {
                 المرجع: <bdi>{current.ref}</bdi> · {current.payment === "cliq" ? "CliQ" : "المطعم"}
               </p>
               <p>
-                {current.contact.phone} · {current.contact.address}
+                {current.contact.phone} · {current.contact.area} · {current.contact.address}
               </p>
-              {current.status !== "completed" && (
+              {current.status === "delivery_review" && (
+                <form className="form" onSubmit={e => {
+                  e.preventDefault();
+                  const fee = new FormData(e.currentTarget).get("fee");
+                  save({ ref: current.ref, status: "pending", delivery: Math.round(Number(fee) * 100) });
+                }}>
+                  <label>رسوم التوصيل بالدينار<input type="number" name="fee" required min="0" step="0.01" max="1000" /></label>
+                  <button className="btn primary" disabled={busy}>تأكيد التغطية ورسوم التوصيل</button>
+                </form>
+              )}
+              {["pending","paid","preparing"].includes(current.status) && (
                 <button
                   className="btn primary"
                   disabled={busy}
